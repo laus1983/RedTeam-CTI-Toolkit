@@ -1,0 +1,14 @@
+Arquitectura del Proyecto
+
+RedTeam_Toolkit/
+│
+├── .env                  # Credenciales (NO subir a repositorios)
+├── config.py             # Cargador central de configuración
+├── main.py               # Punto de entrada y la Interfaz Gráfica (UI)
+│
+├── core/                 # Módulos de lógica principal
+│   ├── nvd_scanner.py    # Lógica de CVEs
+│   └── threat_intel.py   # Lógica de VirusTotal y AbuseIPDB
+│
+└── utils/                # Utilidades de soporte
+    └── file_manager.py   # Lectura de inputs (TXT/CSV/XLSX) y generación de reportes

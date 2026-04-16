@@ -1,0 +1,22 @@
+# Entornos virtuales
+venv/
+.venv/
+env/
+
+# Archivos de credenciales y configuración local (¡CRÍTICO!)
+.env
+
+# Archivos compilados de Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Archivos generados por la herramienta (Reportes de OSINT/CTI)
+cve_data.xlsx
+Reporte_*.xlsx
+Reporte_*.txt
+*.csv
+
+# Archivos temporales del sistema operativo
+.DS_Store
+Thumbs.db

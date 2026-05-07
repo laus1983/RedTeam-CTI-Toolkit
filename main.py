@@ -9,6 +9,7 @@ from datetime import datetime
 import config
 from core.nvd_scanner import ejecutar_escaneo_cve
 from core.threat_intel import check_ip, check_url, check_file_hash
+from core.tenable_sc_scanner import analizar_impacto  # <--- NUEVO MÓDULO IMPORTADO
 from utils.file_manager import leer_iocs, generar_reporte_ti
 
 class RedTeamToolkitApp:
@@ -23,14 +24,18 @@ class RedTeamToolkitApp:
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
         
+        # Pestañas
         self.tab_cve = ttk.Frame(self.notebook)
         self.tab_ti = ttk.Frame(self.notebook)
+        self.tab_tenable = ttk.Frame(self.notebook) # <--- NUEVA PESTAÑA
         
         self.notebook.add(self.tab_cve, text="🛡️ Buscador CVE (NVD)")
         self.notebook.add(self.tab_ti, text="🕵️ Threat Intel (IoCs)")
+        self.notebook.add(self.tab_tenable, text="🎯 Impacto Tenable SC") # <--- AÑADIDA AL NOTEBOOK
         
         self.setup_cve_tab()
         self.setup_ti_tab()
+        self.setup_tenable_tab() # <--- INICIALIZAR NUEVA PESTAÑA
         self.setup_console()
 
     def log(self, mensaje):
@@ -134,28 +139,22 @@ class RedTeamToolkitApp:
                 archivo_excel = "cve_data.xlsx"
                 df_nuevo = pd.DataFrame(cve_list)
                 
-                # --- MEJORA: Limpiar espacios ocultos en los IDs para evitar falsos positivos ---
                 df_nuevo["CVE ID"] = df_nuevo["CVE ID"].astype(str).str.strip()
                 
                 if os.path.exists(archivo_excel):
                     df_existente = pd.read_excel(archivo_excel)
                     
                     if not df_existente.empty and "CVE ID" in df_existente.columns:
-                        # Limpiar espacios también en el archivo existente
                         df_existente["CVE ID"] = df_existente["CVE ID"].astype(str).str.strip()
-                        
-                        # Buscar diferencias
                         nuevos = df_nuevo[~df_nuevo["CVE ID"].isin(df_existente["CVE ID"])]
                         
                         if not nuevos.empty:
                             df_final = pd.concat([df_existente, nuevos], ignore_index=True)
-                            df_final = df_final.drop_duplicates(subset=["CVE ID"], keep="last") # Doble seguridad
+                            df_final = df_final.drop_duplicates(subset=["CVE ID"], keep="last")
                             df_final.to_excel(archivo_excel, index=False)
-                            # --- MEJORA: Log detallado ---
                             self.log(f"✅ ÉXITO: Se descargaron {len(df_nuevo)} CVEs. {len(nuevos)} eran nuevos y se agregaron al Excel.")
                         else:
-                            # --- MEJORA: Explicación clara ---
-                            self.log(f"ℹ️ SIN CAMBIOS: La API encontró {len(df_nuevo)} CVEs, pero TODOS ya estaban registrados previamente en tu Excel.")
+                            self.log(f"ℹ️ SIN CAMBIOS: La API encontró {len(df_nuevo)} CVEs, pero TODOS ya estaban registrados previamente.")
                     else:
                         df_nuevo.to_excel(archivo_excel, index=False)
                         self.log(f"✅ ÉXITO: Archivo reconstruido con {len(df_nuevo)} registros.")
@@ -164,7 +163,7 @@ class RedTeamToolkitApp:
                     self.log(f"🆕 ÉXITO: Archivo creado con {len(df_nuevo)} registros.")
                     
         except PermissionError:
-            self.log("❌ ERROR: El archivo 'cve_data.xlsx' está abierto en otro programa. Ciérrelo e intente de nuevo.")
+            self.log("❌ ERROR: El archivo 'cve_data.xlsx' está abierto en otro programa.")
         except Exception as e:
             self.log(f"❌ ERROR INESPERADO al procesar el Excel: {e}")
         finally:
@@ -210,14 +209,12 @@ class RedTeamToolkitApp:
 
     def seleccionar_archivo(self):
         tipo_actual = self.tipo_ioc.get()
-        
         if tipo_actual == "File Hash":
             tipos_permitidos = [("Todos los archivos", "*.*")]
         else:
             tipos_permitidos = [("Listas de datos Soportadas", "*.txt *.csv *.xlsx *.xls")]
 
         filepath = filedialog.askopenfilename(filetypes=tipos_permitidos)
-        
         if filepath:
             self.archivo_ioc = filepath
             self.lbl_file.config(text=os.path.basename(filepath)[:30], foreground="blue")
@@ -235,7 +232,7 @@ class RedTeamToolkitApp:
         elif self.archivo_ioc:
             ext = os.path.splitext(self.archivo_ioc)[1].lower()
             if tipo != "File Hash" and ext not in [".txt", ".csv", ".xlsx", ".xls"]:
-                messagebox.showerror("Error", f"Has seleccionado '{tipo}', pero el archivo es un '{ext}'.\nPor favor, cambia el tipo de análisis a 'File Hash' o carga un archivo válido (.csv, .txt, .xlsx).")
+                messagebox.showerror("Error", f"Has seleccionado '{tipo}', pero el archivo es un '{ext}'.")
                 self.archivo_ioc = None
                 self.lbl_file.config(text="Ningún archivo...", foreground="gray")
                 return
@@ -292,6 +289,91 @@ class RedTeamToolkitApp:
         finally:
             self.btn_ti.config(state=tk.NORMAL)
             self.btn_abort_ti.config(state=tk.DISABLED, text="🛑 Abortar Proceso")
+
+    # ==========================================
+    # TAB 3: TENABLE SC (NUEVO)
+    # ==========================================
+    def setup_tenable_tab(self):
+        frame = ttk.LabelFrame(self.tab_tenable, text="Cruce de Inteligencia con Tenable Security Center", padding=15)
+        frame.pack(fill="x", padx=10, pady=10)
+
+        # Entrada del archivo de CVEs
+        ttk.Label(frame, text="Archivo Excel/CSV origen (CVEs):").grid(row=0, column=0, sticky="w", pady=5)
+        self.entry_tenable_in = ttk.Entry(frame, width=40)
+        self.entry_tenable_in.insert(0, "cve_data.xlsx")  # Por defecto busca el que genera NVD
+        self.entry_tenable_in.grid(row=0, column=1, padx=5, pady=5)
+        ttk.Button(frame, text="Examinar", command=self.seleccionar_archivo_tenable).grid(row=0, column=2, padx=5)
+
+        # Salida del reporte maestro
+        ttk.Label(frame, text="Nombre del reporte final (.csv):").grid(row=1, column=0, sticky="w", pady=5)
+        self.entry_tenable_out = ttk.Entry(frame, width=40)
+        self.entry_tenable_out.insert(0, "resumen_impacto_global.csv")
+        self.entry_tenable_out.grid(row=1, column=1, padx=5, pady=5)
+
+        # Botón de ejecución
+        btn_frame_tenable = ttk.Frame(self.tab_tenable)
+        btn_frame_tenable.pack(pady=15)
+        
+        self.btn_tenable = ttk.Button(btn_frame_tenable, text="▶ Evaluar Impacto en Tenable SC", command=self.lanzar_tenable)
+        self.btn_tenable.grid(row=0, column=0, padx=5)
+
+    def seleccionar_archivo_tenable(self):
+        filepath = filedialog.askopenfilename(filetypes=[("Archivos Soportados", "*.xlsx *.xls *.csv")])
+        if filepath:
+            self.entry_tenable_in.delete(0, tk.END)
+            self.entry_tenable_in.insert(0, filepath)
+
+    def lanzar_tenable(self):
+        archivo_in = self.entry_tenable_in.get().strip()
+        archivo_out = self.entry_tenable_out.get().strip()
+
+        if not os.path.exists(archivo_in):
+            messagebox.showerror("Error", f"No se encontró el archivo de origen: {archivo_in}\nAsegúrate de ejecutar primero el Buscador CVE.")
+            return
+
+        self.log(f"\n🚀 Iniciando validación de impacto en Tenable SC...")
+        self.log(f"[*] Preparando archivo: {archivo_in}")
+        self.btn_tenable.config(state=tk.DISABLED)
+        
+        threading.Thread(target=self.hilo_tenable, args=(archivo_in, archivo_out)).start()
+
+    def hilo_tenable(self, archivo_in, archivo_out):
+        try:
+            # 1. Adaptador de Excel a CSV temporal (para compatibilidad con tu módulo)
+            temp_csv = "temp_cves_tenable.csv"
+            
+            if archivo_in.endswith('.xlsx') or archivo_in.endswith('.xls'):
+                df = pd.read_excel(archivo_in)
+                if "CVE ID" in df.columns:
+                    # Extraemos solo la columna de los CVE y la guardamos sin cabecera
+                    df[["CVE ID"]].to_csv(temp_csv, index=False, header=False)
+                else:
+                    self.log("❌ Error: El archivo Excel seleccionado no tiene la columna 'CVE ID'.")
+                    return
+            else:
+                temp_csv = archivo_in # Si el usuario cargó directamente un CSV, lo usamos
+
+            # 2. Llamada a tu módulo de Tenable SC
+            self.log("[*] Conectando a Tenable Security Center a través de la API...")
+            exito, mensaje = analizar_impacto(archivo_entrada_cves=temp_csv, archivo_resumen=archivo_out)
+            
+            if exito:
+                self.log(f"✅ Análisis de Tenable Completado.")
+                self.log(f"📄 {mensaje}")
+                messagebox.showinfo("Éxito Tenable SC", f"Análisis finalizado.\n\n{mensaje}")
+            else:
+                self.log(f"❌ Error en Tenable SC: {mensaje}")
+                messagebox.showerror("Error", f"Fallo en la comunicación con Tenable:\n{mensaje}")
+
+            # 3. Limpieza de basura
+            if temp_csv == "temp_cves_tenable.csv" and os.path.exists(temp_csv):
+                os.remove(temp_csv)
+
+        except Exception as e:
+            self.log(f"❌ Error crítico en el hilo de Tenable SC: {e}")
+        finally:
+            self.btn_tenable.config(state=tk.NORMAL)
+
 
 if __name__ == "__main__":
     root = tk.Tk()

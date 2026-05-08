@@ -4,12 +4,14 @@ import threading
 import pandas as pd
 import os
 import time
+import signal
+import sys
 from datetime import datetime
 
 import config
 from core.nvd_scanner import ejecutar_escaneo_cve
 from core.threat_intel import check_ip, check_url, check_file_hash
-from core.tenable_sc_scanner import analizar_impacto  # <--- NUEVO MÓDULO IMPORTADO
+from core.tenable_sc_scanner import analizar_impacto
 from utils.file_manager import leer_iocs, generar_reporte_ti
 
 class RedTeamToolkitApp:
@@ -18,8 +20,10 @@ class RedTeamToolkitApp:
         self.root.title("Advanced CTI & Vulnerability Toolkit")
         self.root.geometry("820x720")
         
+        # Eventos para abortar hilos
         self.stop_event_cve = threading.Event()
         self.stop_event_ti = threading.Event()
+        self.stop_event_tenable = threading.Event() # <--- NUEVO EVENTO
         
         self.notebook = ttk.Notebook(root)
         self.notebook.pack(fill='both', expand=True, padx=10, pady=10)
@@ -27,15 +31,15 @@ class RedTeamToolkitApp:
         # Pestañas
         self.tab_cve = ttk.Frame(self.notebook)
         self.tab_ti = ttk.Frame(self.notebook)
-        self.tab_tenable = ttk.Frame(self.notebook) # <--- NUEVA PESTAÑA
+        self.tab_tenable = ttk.Frame(self.notebook)
         
         self.notebook.add(self.tab_cve, text="🛡️ Buscador CVE (NVD)")
         self.notebook.add(self.tab_ti, text="🕵️ Threat Intel (IoCs)")
-        self.notebook.add(self.tab_tenable, text="🎯 Impacto Tenable SC") # <--- AÑADIDA AL NOTEBOOK
+        self.notebook.add(self.tab_tenable, text="🎯 Impacto Tenable SC")
         
         self.setup_cve_tab()
         self.setup_ti_tab()
-        self.setup_tenable_tab() # <--- INICIALIZAR NUEVA PESTAÑA
+        self.setup_tenable_tab()
         self.setup_console()
 
     def log(self, mensaje):
@@ -291,7 +295,7 @@ class RedTeamToolkitApp:
             self.btn_abort_ti.config(state=tk.DISABLED, text="🛑 Abortar Proceso")
 
     # ==========================================
-    # TAB 3: TENABLE SC (NUEVO)
+    # TAB 3: TENABLE SC 
     # ==========================================
     def setup_tenable_tab(self):
         frame = ttk.LabelFrame(self.tab_tenable, text="Cruce de Inteligencia con Tenable Security Center", padding=15)
@@ -300,7 +304,7 @@ class RedTeamToolkitApp:
         # Entrada del archivo de CVEs
         ttk.Label(frame, text="Archivo Excel/CSV origen (CVEs):").grid(row=0, column=0, sticky="w", pady=5)
         self.entry_tenable_in = ttk.Entry(frame, width=40)
-        self.entry_tenable_in.insert(0, "cve_data.xlsx")  # Por defecto busca el que genera NVD
+        self.entry_tenable_in.insert(0, "cve_data.xlsx") 
         self.entry_tenable_in.grid(row=0, column=1, padx=5, pady=5)
         ttk.Button(frame, text="Examinar", command=self.seleccionar_archivo_tenable).grid(row=0, column=2, padx=5)
 
@@ -310,12 +314,20 @@ class RedTeamToolkitApp:
         self.entry_tenable_out.insert(0, "resumen_impacto_global.csv")
         self.entry_tenable_out.grid(row=1, column=1, padx=5, pady=5)
 
-        # Botón de ejecución
+        # Botones de ejecución
         btn_frame_tenable = ttk.Frame(self.tab_tenable)
         btn_frame_tenable.pack(pady=15)
         
         self.btn_tenable = ttk.Button(btn_frame_tenable, text="▶ Evaluar Impacto en Tenable SC", command=self.lanzar_tenable)
         self.btn_tenable.grid(row=0, column=0, padx=5)
+
+        self.btn_abort_tenable = ttk.Button(btn_frame_tenable, text="🛑 Abortar Proceso", command=self.abortar_tenable, state=tk.DISABLED)
+        self.btn_abort_tenable.grid(row=0, column=1, padx=5)
+
+    def abortar_tenable(self):
+        self.log("⚠️ Señal de aborto enviada a Tenable SC... terminando conexión.")
+        self.stop_event_tenable.set()
+        self.btn_abort_tenable.config(state=tk.DISABLED, text="⏳ Cancelando...")
 
     def seleccionar_archivo_tenable(self):
         filepath = filedialog.askopenfilename(filetypes=[("Archivos Soportados", "*.xlsx *.xls *.csv")])
@@ -333,39 +345,49 @@ class RedTeamToolkitApp:
 
         self.log(f"\n🚀 Iniciando validación de impacto en Tenable SC...")
         self.log(f"[*] Preparando archivo: {archivo_in}")
+        
+        # Gestionar estados de los botones
         self.btn_tenable.config(state=tk.DISABLED)
+        self.btn_abort_tenable.config(state=tk.NORMAL, text="🛑 Abortar Proceso")
+        self.stop_event_tenable.clear()
         
         threading.Thread(target=self.hilo_tenable, args=(archivo_in, archivo_out)).start()
 
     def hilo_tenable(self, archivo_in, archivo_out):
         try:
-            # 1. Adaptador de Excel a CSV temporal (para compatibilidad con tu módulo)
             temp_csv = "temp_cves_tenable.csv"
             
             if archivo_in.endswith('.xlsx') or archivo_in.endswith('.xls'):
                 df = pd.read_excel(archivo_in)
                 if "CVE ID" in df.columns:
-                    # Extraemos solo la columna de los CVE y la guardamos sin cabecera
                     df[["CVE ID"]].to_csv(temp_csv, index=False, header=False)
                 else:
                     self.log("❌ Error: El archivo Excel seleccionado no tiene la columna 'CVE ID'.")
                     return
             else:
-                temp_csv = archivo_in # Si el usuario cargó directamente un CSV, lo usamos
+                temp_csv = archivo_in 
 
-            # 2. Llamada a tu módulo de Tenable SC
-            self.log("[*] Conectando a Tenable Security Center a través de la API...")
-            exito, mensaje = analizar_impacto(archivo_entrada_cves=temp_csv, archivo_resumen=archivo_out)
+            self.log("[*] Conectando a Tenable Security Center...")
+            
+            # Pasamos las nuevas variables de control al módulo
+            exito, mensaje = analizar_impacto(
+                archivo_entrada_cves=temp_csv, 
+                archivo_resumen=archivo_out,
+                log_callback=self.log,            # <--- Pasa el logger
+                stop_event=self.stop_event_tenable # <--- Pasa el evento de parada
+            )
             
             if exito:
-                self.log(f"✅ Análisis de Tenable Completado.")
-                self.log(f"📄 {mensaje}")
-                messagebox.showinfo("Éxito Tenable SC", f"Análisis finalizado.\n\n{mensaje}")
+                # Solo mostrar éxito si no fue abortado voluntariamente
+                if not self.stop_event_tenable.is_set():
+                    self.log(f"✅ Análisis de Tenable Completado.")
+                    self.log(f"📄 {mensaje}")
+                    messagebox.showinfo("Éxito Tenable SC", f"Análisis finalizado.\n\n{mensaje}")
             else:
-                self.log(f"❌ Error en Tenable SC: {mensaje}")
-                messagebox.showerror("Error", f"Fallo en la comunicación con Tenable:\n{mensaje}")
+                self.log(f"❌ Error o Aborto en Tenable SC: {mensaje}")
+                if not self.stop_event_tenable.is_set():
+                    messagebox.showerror("Error", f"Fallo en Tenable:\n{mensaje}")
 
-            # 3. Limpieza de basura
             if temp_csv == "temp_cves_tenable.csv" and os.path.exists(temp_csv):
                 os.remove(temp_csv)
 
@@ -373,9 +395,35 @@ class RedTeamToolkitApp:
             self.log(f"❌ Error crítico en el hilo de Tenable SC: {e}")
         finally:
             self.btn_tenable.config(state=tk.NORMAL)
+            self.btn_abort_tenable.config(state=tk.DISABLED, text="🛑 Abortar Proceso")
 
+# ==========================================
+# GESTIÓN DE SEÑALES (Ctrl+C en Terminal)
+# ==========================================
+def manejar_interrupcion(sig, frame):
+    print("\n[!] Señal Ctrl+C detectada. Cerrando la aplicación de forma segura...")
+    try:
+        # Destruir la ventana root cierra el mainloop
+        if root:
+            root.quit()
+            root.destroy()
+    except:
+        pass
+    sys.exit(0)
+
+# Para que el mainloop de Tkinter escuche el Handler de interrupción (Ctrl+C), 
+# necesitamos que Python despierte periódicamente para procesar la cola de señales.
+def monitorear_senales():
+    root.after(200, monitorear_senales)
 
 if __name__ == "__main__":
+    # Registrar la señal SIGINT (Ctrl+C)
+    signal.signal(signal.SIGINT, manejar_interrupcion)
+    
     root = tk.Tk()
     app = RedTeamToolkitApp(root)
+    
+    # Iniciar ciclo de monitoreo de señales
+    monitorear_senales()
+    
     root.mainloop()

@@ -28,7 +28,7 @@ def descargar_eventos_ips(fecha_inicio, fecha_fin, archivo_excel="Métricas Tren
     headers = get_headers()
     endpoint = f"{base_url}/search/logs"
     
-    # Query específico para eventos de Intrusión (IPS)
+    # Query para eventos de Intrusion Prevention (IPS)
     payload = {
         "query": "source:endpointSecurity AND eventName:\"Intrusion Prevention Event\"",
         "from": fecha_inicio,
@@ -41,9 +41,8 @@ def descargar_eventos_ips(fecha_inicio, fecha_fin, archivo_excel="Métricas Tren
     try:
         response = requests.post(endpoint, headers=headers, json=payload, timeout=30)
         
-        # Validación de Rotación de Token
         if response.status_code == 401:
-            return False, "TOKEN_EXPIRED: El token de Trend Vision One ha expirado. Por favor, genere uno nuevo en la consola (Recuerde la rotación cada 90 días)."
+            return False, "TOKEN_EXPIRED: El token de Trend Vision One ha expirado. Por favor, rote su API Key (90 días recomendados)."
         
         if response.status_code != 200:
             return False, f"Error API Trend: HTTP {response.status_code}"
@@ -52,10 +51,10 @@ def descargar_eventos_ips(fecha_inicio, fecha_fin, archivo_excel="Métricas Tren
         if not eventos:
             return True, "No se encontraron eventos IPS en este rango de fechas."
 
-        log(f"[+] {len(eventos)} eventos encontrados. Actualizando Excel...")
+        log(f"[+] {len(eventos)} eventos encontrados. Actualizando archivo de métricas...")
         df_nuevos = pd.DataFrame(eventos)
 
-        # Lógica para no sobrescribir el archivo Excel existente
+        # Lógica para añadir datos al Excel sin sobrescribir lo anterior
         if os.path.exists(archivo_excel):
             with pd.ExcelWriter(archivo_excel, engine='openpyxl', mode='a', if_sheet_exists='overlay') as writer:
                 try:
@@ -71,13 +70,12 @@ def descargar_eventos_ips(fecha_inicio, fecha_fin, archivo_excel="Métricas Tren
     except Exception as e:
         return False, f"Error en módulo IPS: {str(e)}"
 
-# --- VALIDACIÓN DE ACTIVOS / SERVIDORES ---
+# --- BÚSQUEDA Y VALIDACIÓN DE SERVIDORES ---
 def buscar_servidor_api(criterio):
     base_url = get_base_url()
     headers = get_headers()
     endpoint = f"{base_url}/endpointInventory/endpoints"
     
-    # Detección automática: Si tiene puntos es IP, si no es Hostname
     params = {"ip": criterio} if "." in criterio else {"endpointName": criterio}
 
     try:
@@ -95,43 +93,41 @@ def procesar_archivo_servidores(ruta_archivo, log_callback=None, stop_event=None
 
     try:
         ext = os.path.splitext(ruta_archivo)[1].lower()
-        # Validación de integridad del archivo (soporta CSV con delimitadores automáticos)
         if ext == '.csv':
             df = pd.read_csv(ruta_archivo, sep=None, engine='python')
         else:
             df = pd.read_excel(ruta_archivo)
 
-        if df.empty: return False, "El archivo seleccionado está vacío."
+        if df.empty: return False, "El archivo está vacío."
 
         lista_items = df.iloc[:, 0].dropna().astype(str).tolist()
-        log(f"[*] Archivo validado. Iniciando búsqueda de {len(lista_items)} servidores...")
+        log(f"[*] Procesando lista de {len(lista_items)} servidores...")
 
         resultados = []
         for i, item in enumerate(lista_items, 1):
             if stop_event and stop_event.is_set():
-                log("🚫 Proceso de validación abortado.")
+                log("🚫 Validación abortada por el usuario.")
                 break
             
-            log(f"[*] Buscando ({i}/{len(lista_items)}): {item}")
+            log(f"[*] Validando ({i}/{len(lista_items)}): {item}")
             info = buscar_servidor_api(item.strip())
             
             if info == "EXPIRED":
-                return False, "TOKEN_EXPIRED: Token de API caducado."
+                return False, "TOKEN_EXPIRED: API Key caducada."
             
             if info:
                 s = info[0]
-                resultados.append([item, s.get("endpointName"), s.get("ip"), s.get("osName"), "Encontrado"])
+                resultados.append([item, s.get("endpointName"), s.get("ip"), s.get("osName"), "Válido"])
             else:
                 resultados.append([item, "N/A", "N/A", "N/A", "No encontrado"])
             
-            time.sleep(0.1)
+            time.sleep(0.1) # Evitar saturar la API
 
-        # Generar reporte de validación
-        df_res = pd.DataFrame(resultados, columns=["Busqueda", "Hostname", "IP Real", "SO", "Estado"])
-        nom_reporte = f"Validacion_Trend_{int(time.time())}.csv"
-        df_res.to_csv(nom_reporte, index=False)
+        df_res = pd.DataFrame(resultados, columns=["Entrada", "Hostname", "IP", "SO", "Estado"])
+        reporte = f"Validacion_Trend_{int(time.time())}.csv"
+        df_res.to_csv(reporte, index=False)
         
-        return True, f"Validación finalizada. Reporte generado: {nom_reporte}"
+        return True, f"Validación finalizada. Reporte: {reporte}"
 
     except Exception as e:
         return False, f"Error al procesar archivo: {str(e)}"

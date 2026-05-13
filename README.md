@@ -1,59 +1,55 @@
-# 🛡️ Advanced CTI & Vulnerability Toolkit
+# 🛡️ Advanced RedTeam & CTI Toolkit
 
 <p align="center">
   <img src="https://img.shields.io/badge/Python-3.8+-blue?style=for-the-badge&logo=python&logoColor=white" alt="Python">
+  <img src="https://img.shields.io/badge/GUI-CustomTkinter-blueviolet?style=for-the-badge" alt="GUI">
   <img src="https://img.shields.io/badge/License-MIT-green?style=for-the-badge" alt="License">
-  <img src="https://img.shields.io/badge/Maintained%3F-yes-brightgreen?style=for-the-badge" alt="Maintained">
   <img src="https://img.shields.io/badge/OS-Linux%20%7C%20Windows-lightgrey?style=for-the-badge" alt="OS">
 </p>
 
-Una herramienta de escritorio con Interfaz Gráfica (GUI) diseñada para especialistas en ciberseguridad, equipos Red Team e investigadores de Threat Intelligence. Permite la extracción automatizada de vulnerabilidades (CVEs) desde la National Vulnerability Database (NVD), el cruce de inteligencia con infraestructuras internas vía Tenable Security Center, el análisis de telemetría en **Trend Vision One** y el escaneo masivo de Indicadores de Compromiso (IoCs) utilizando VirusTotal y AbuseIPDB.
+Una plataforma de escritorio avanzada con interfaz moderna diseñada para operadores de Red Team y analistas de Threat Intelligence. Facilita la correlación de vulnerabilidades (NVD), el análisis de impacto interno (Tenable.sc) y la telemetría ofensiva/defensiva en **TrendAI Vision One**, todo bajo un entorno gráfico profesional de alto rendimiento.
 
 ---
 
 ## 🚀 Características Principales
 
-### 1. Buscador Avanzado de CVEs (NVD API v2.0)
+### 1. Interfaz Ejecutiva de Próxima Generación
 
-- **Extracción Masiva:** Supera los límites de paginación de la API de NVD para descargar bases de datos históricas completas.
-- **Filtros Granulares:** Búsqueda por rango de fechas, Severidad CVSS, Keywords y CPE.
-- **Deduplicación Inteligente:** Solo añade registros nuevos al Excel local, ignorando duplicados.
+- **Dashboard Moderno:** Construido con `customtkinter`, ofreciendo un modo oscuro nativo y una disposición optimizada para flujos de trabajo de seguridad.
+- **Consola Operativa:** Log en tiempo real con estética de terminal para el monitoreo de procesos en segundo plano.
 
-### 2. Motor de Threat Intelligence (IoC Scanner)
+### 2. Módulo Avanzado TrendAI Vision One (XDR)
 
-- **Análisis Multi-Vector:** Soporte para IP, URL y Hashes de archivos.
-- **OpSec Safe:** Cálculo de hash local antes de consulta para evitar exposición de artefactos sensibles.
-- **Reportes Automatizados:** Generación de archivos `.txt` y `.xlsx` con los resultados del análisis.
+- **Omni-Extractor de Datos:** Motor de búsqueda capaz de extraer IPs, Hostnames y etiquetas (Tags) con precisión quirúrgica, incluso cuando la API devuelve datos parciales.
+- **Caché Global de Inventario:** Descarga y almacenamiento en memoria del inventario completo de activos para permitir búsquedas instantáneas y coincidencias aproximadas ("contiene").
+- **Detección de Etiquetas Manuales:** Algoritmo recursivo diseñado para identificar etiquetas colocadas manualmente (ej. `nessus`, `vulnerabilidad`) ocultas en los metadatos del proveedor.
+- **Soporte Multi-IP:** Capacidad para listar y exportar todas las direcciones IP asociadas a un mismo activo (VPN, LAN, Virtuales).
 
-### 3. Integración con Tenable Security Center (Tenable.sc)
+### 3. Buscador de Vulnerabilidades (NVD API v2.0)
 
-- **Cruce Automático:** Cruza CVEs detectados con la base de datos de vulnerabilidades interna.
-- **Validación de Impacto:** Identifica servidores afectados en tiempo real y genera reportes individuales por CVE crítico.
+- **Minería de CVEs:** Extracción automatizada superando límites de paginación para análisis histórico.
+- **Filtros de Severidad:** Clasificación instantánea por impacto CVSS v3.
 
-### 4. Módulo Avanzado Trend Vision One (XDR)
+### 4. Threat Intelligence & IoC Scanner
 
-- **Métricas IPS (Endpoint Security):** Extracción automatizada de eventos de "Intrusion Prevention" filtrados por periodo. Los datos se integran sin sobrescribir en el archivo corporativo `Métricas Trend Vision One.xlsx`.
-- **Validación de Activos (Asset Search):** Búsqueda bidireccional (IP o Hostname) para obtener información técnica del servidor (SO, Agent GUID, etc.).
-- **Procesamiento Masivo:** Soporte para carga de archivos `.txt`, `.csv` y `.xlsx` con validación de integridad y detección automática de delimitadores.
-- **Gestión de Sesión:** Sistema de alerta integrado para la rotación de API Keys (recomendado cada 90 días).
+- **Validación Multi-Fuente:** Integración con AbuseIPDB y VirusTotal para reputación de IPs, URLs y Hashes.
+- **Cruce Tenable.sc:** Identificación de activos internos vulnerables a CVEs específicos detectados en fuentes externas.
 
 ---
 
 ## ⚙️ Requisitos y Dependencias
 
-El toolkit es compatible con entornos Linux y Windows.
-
-Para instalar las dependencias necesarias, ejecuta:
+El toolkit requiere Python 3.8+ y las siguientes librerías:
 
 ```bash
-pip install requests pandas openpyxl python-dotenv pyTenable
+pip install requests pandas openpyxl python-dotenv pyTenable customtkinter
 ```
 
 ---
 
 ## 🔐 Configuración de Credenciales
 
-Crea un archivo llamado `.env` en el directorio raíz del proyecto con el siguiente formato:
+Configura tu archivo `.env` en la raíz del proyecto para habilitar las integraciones:
 
 ```env
 # Inteligencia Externa
@@ -66,53 +62,33 @@ SC_IP="ip_o_dominio_sc"
 SC_ACCESS_KEY="tu_access_key"
 SC_SECRET_KEY="tu_secret_key"
 
-# Trend Vision One
+# TrendAI Vision One
 TREND_V1_URL="api.xdr.trendmicro.com"
 TREND_V1_TOKEN="tu_token_trend_v1"
 ```
 
-> [!CAUTION]
-> **Nota de Seguridad Crítica:** El archivo `.env` está excluido vía `.gitignore`. **NUNCA** subas este archivo a repositorios públicos. Se recomienda asignar el rol de **Auditor** a la API Key de Trend Vision One.
-
 ---
 
-## 🛠️ Uso y Arquitectura
-
-Ejecuta el script principal para lanzar la interfaz gráfica:
-
-```bash
-python main.py
-```
-
-### Funciones de Control de Flujo
-
-- **Aborto Seguro:** Botones dedicados en cada módulo para detener procesos largos sin corromper archivos o bases de datos locales.
-- **Consola de Estado:** Visualización en tiempo real del progreso (ej. `Analizando 5/150`) y alertas de caducidad de tokens.
-
-### 📁 Estructura del Proyecto
+## 🛠️ Arquitectura del Sistema
 
 ```text
-├── .env                  # Credenciales de APIs (Ignorado)
-├── .gitignore            # Reglas de exclusión
-├── config.py             # Cargador de variables de entorno
-├── main.py               # Punto de entrada y GUI (Tkinter)
-├── README.md             # Documentación
+├── main.py                # Punto de entrada (GUI CustomTkinter)
+├── config.py              # Gestión de entorno y constantes
 ├── core/
-│   ├── nvd_scanner.py    # Lógica de la NVD
-│   ├── threat_intel.py   # Lógica de IoCs
-│   ├── tenable_sc_scanner.py # Lógica de Tenable
-│   └── trend_v1_scanner.py   # Lógica de Trend Vision One (IPS y Assets)
+│   ├── nvd_scanner.py     # Lógica de extracción de vulnerabilidades
+│   ├── threat_intel.py    # Análisis de indicadores (IoCs)
+│   ├── tenable_sc_scanner.py # Integración interna Tenable.sc
+│   └── trend_v1_scanner.py   # Motor avanzado TrendAI (Omni-Extractor)
 └── utils/
-    └── file_manager.py   # Gestión de archivos y reportes
+    └── file_manager.py    # Generación de reportes y manejo de archivos
 ```
 
 ---
 
 ## ⚖️ Disclaimer Legal y Ético
 
-> [!WARNING]
-> Este proyecto ha sido desarrollado exclusivamente con fines **educativos** y para su uso en **entornos corporativos autorizados**. El desarrollador no se hace responsable por el mal uso de esta herramienta.
+Este toolkit debe ser utilizado únicamente en entornos donde se posea autorización explícita para la auditoría de seguridad. El desarrollador no asume responsabilidad por el uso indebido de las capacidades de automatización aquí presentadas.
 
 ---
 
-_Desarrollado para facilitar la eficiencia operativa en CTI y Gestión de Vulnerabilidades._
+_Optimizado para la excelencia operativa en Ciberseguridad Ofensiva y Gestión de Amenazas._

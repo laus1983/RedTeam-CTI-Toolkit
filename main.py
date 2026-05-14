@@ -7,6 +7,7 @@ import os
 import time
 import signal
 import sys
+import hashlib
 from datetime import datetime
 
 # Importación de configuraciones y módulos core
@@ -146,7 +147,7 @@ class RedTeamToolkitApp(ctk.CTk):
         self.log_area.delete("1.0", "end")
 
     # ==========================================
-    # PESTAÑA 1: NVD (Buscador CVE) - TRADUCCIÓN EXACTA
+    # PESTAÑA 1: NVD (Buscador CVE)
     # ==========================================
     def setup_cve_tab(self):
         ctk.CTkLabel(self.tab_cve, text="🛡️ Buscador CVE (NVD)", font=ctk.CTkFont(size=20, weight="bold")).pack(anchor="w", pady=(0, 15))
@@ -207,7 +208,7 @@ class RedTeamToolkitApp(ctk.CTk):
         self.btn_abort_cve.configure(state="disabled")
 
     # ==========================================
-    # PESTAÑA 2: THREAT INTEL (IoCs) - TRADUCCIÓN EXACTA
+    # PESTAÑA 2: THREAT INTEL (IoCs)
     # ==========================================
     def setup_ti_tab(self):
         ctk.CTkLabel(self.tab_ti, text="🕵️ Threat Intel (IoCs)", font=ctk.CTkFont(size=20, weight="bold")).pack(anchor="w", pady=(0, 15))
@@ -240,9 +241,38 @@ class RedTeamToolkitApp(ctk.CTk):
 
     def lanzar_ti(self):
         tipo = self.tipo_ioc.get()
-        iocs = [self.entry_ioc.get().strip()] if self.entry_ioc.get() else (leer_iocs(self.archivo_ti) if self.archivo_ti else [])
+        iocs = []
+
+        # 1. Si hay texto ingresado manualmente
+        if self.entry_ioc.get().strip():
+            iocs = [self.entry_ioc.get().strip()]
+        
+        # 2. Si se subió un archivo
+        elif self.archivo_ti:
+            if self.archivo_ti.lower().endswith(('.txt', '.csv', '.xlsx')):
+                try:
+                    iocs = leer_iocs(self.archivo_ti)
+                except Exception as e:
+                    messagebox.showerror("Error", f"Error al leer lista de IoCs: {str(e)}")
+                    return
+            else:
+                # Si el archivo es binario y seleccionaron "File Hash", calculamos el hash
+                if tipo == "File Hash":
+                    try:
+                        self.log(f"[*] Calculando SHA-256 local para: {os.path.basename(self.archivo_ti)}")
+                        with open(self.archivo_ti, "rb") as f:
+                            file_hash = hashlib.sha256(f.read()).hexdigest()
+                        iocs = [file_hash]
+                        self.log(f"[+] Hash calculado exitosamente: {file_hash}")
+                    except Exception as e:
+                        messagebox.showerror("Error de Hash", f"No se pudo calcular el hash: {str(e)}")
+                        return
+                else:
+                    messagebox.showerror("Formato Incorrecto", "Para analizar múltiples IPs o URLs, el archivo debe ser .txt, .csv o .xlsx.")
+                    return
+
         if not iocs: 
-            messagebox.showwarning("Aviso", "Ingrese un IoC o cargue un archivo.")
+            messagebox.showwarning("Aviso", "Ingrese un IoC o cargue un archivo válido.")
             return
         
         self.log(f"\n🚀 Analizando {len(iocs)} IoCs..."); self.stop_events["ti"].clear()
@@ -269,7 +299,7 @@ class RedTeamToolkitApp(ctk.CTk):
         self.btn_abort_ti.configure(state="disabled")
 
     # ==========================================
-    # PESTAÑA 3: TENABLE SC - TRADUCCIÓN EXACTA
+    # PESTAÑA 3: TENABLE SC
     # ==========================================
     def setup_tenable_tab(self):
         ctk.CTkLabel(self.tab_tenable, text="🎯 Tenable SC", font=ctk.CTkFont(size=20, weight="bold")).pack(anchor="w", pady=(0, 15))
@@ -314,7 +344,7 @@ class RedTeamToolkitApp(ctk.CTk):
             self.btn_abort_ten.configure(state="disabled")
 
     # ==========================================
-    # PESTAÑA 4: TREND VISION ONE - TRADUCCIÓN EXACTA
+    # PESTAÑA 4: TREND VISION ONE
     # ==========================================
     def setup_trend_tab(self):
         ctk.CTkLabel(self.tab_trend, text="🔴 Trend Vision One", font=ctk.CTkFont(size=20, weight="bold")).pack(anchor="w", pady=(0, 15))
